@@ -1,0 +1,27 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: git clone https://github.com/example/other.git
+      - name: Wait for tests
+        run: |
+          while true; do
+            if gh api repos/example/repo/commits/main/status --jq '.state' | grep -q success; then break; fi
+            sleep 30
+          done
+      - run: gh run watch 12345
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm test
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - run: ./deploy.sh

@@ -1,0 +1,5 @@
+name: ci-hygiene
+title: CI hygiene audit
+description: Audit GitHub Actions workflows for three agent-era CI anti-patterns (full clones, polling loops, flaky or over-broad required checks). Includes a stdlib-only checker script and a vetting checklist for promoting a test to required.
+category: Work and knowledge
+include_in_prompt: false
