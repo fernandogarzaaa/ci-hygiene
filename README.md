@@ -15,11 +15,15 @@ Inspired by [helpmeexitvi's reel](https://www.instagram.com/reel/DfckK-CguMf/) o
 ## Layout
 
 ```text
+.github/workflows/ci.yml   the repo's own CI: runs the skill's tests (shallow checkout, no polling)
 skills/ci-hygiene/
   SKILL.md            the playbook: what to look for, the fixes, the vetting checklist
   skill.yaml          skill metadata
   scripts/ci-hygiene.py   stdlib-only checker (C1 and C2 mechanically, C3 via the GitHub API)
+  scripts/ci-local-gate.py   pre-push gate: hygiene audit plus the repo's local checks
+  scripts/ci-local-act.py    run the repo's workflows locally with nektos/act
   tests/test_ci_hygiene.py
+  tests/test_ci_local.py
   fixtures/dirty/     workflow with all three anti-patterns
   fixtures/clean/     workflow that passes
 ```
@@ -58,6 +62,51 @@ python3 skills/ci-hygiene/scripts/ci-hygiene.py <repo-path> --format json
 ```
 
 Exit code 0 is clean, 1 is findings, 2 is a usage error. The checker is stdlib-only and scans workflow YAML heuristically, so read a flagged line in context before acting.
+
+## Local CI
+
+The checker audits the workflow files. Local CI proves the work itself before it reaches GitHub, in two layers.
+
+### Pre-push gate
+
+`scripts/ci-local-gate.py` runs the hygiene audit, then the repo's own checks, and fails the push when anything fails.
+
+```sh
+# Audit plus auto-detected local checks (pytest, npm test/lint, cargo test, go test, make test)
+python3 skills/ci-hygiene/scripts/ci-local-gate.py <repo-path>
+
+# Audit only
+python3 skills/ci-hygiene/scripts/ci-local-gate.py <repo-path> --skip-tests
+
+# Install the gate as the repo's pre-push hook
+python3 skills/ci-hygiene/scripts/ci-local-gate.py --install-hook <repo-path>
+```
+
+Declare explicit checks in `.ci-hygiene.json` at the repo root (this replaces auto-detection):
+
+```json
+{"checks": [{"name": "unit", "run": "pytest -q tests/unit"}]}
+```
+
+A check whose tool is missing is skipped with a note, never silently passed.
+
+### Run workflows locally with act
+
+`scripts/ci-local-act.py` runs the repo's actual `.github/workflows/*.yml` on the machine through [nektos/act](https://github.com/nektos/act). It needs act and Docker; when either is missing it prints install guidance and exits 2.
+
+```sh
+# Simulate a pull_request run
+python3 skills/ci-hygiene/scripts/ci-local-act.py <repo-path>
+
+# One job only, or just list the jobs
+python3 skills/ci-hygiene/scripts/ci-local-act.py <repo-path> --job test
+python3 skills/ci-hygiene/scripts/ci-local-act.py <repo-path> --list
+
+# Extra args go to act after --
+python3 skills/ci-hygiene/scripts/ci-local-act.py <repo-path> -- --container-architecture linux/amd64
+```
+
+A green local run proves the workflow file runs. It does not prove the GitHub-hosted environment matches the local one, so a push still goes through real CI.
 
 ## Tests
 

@@ -43,6 +43,40 @@ python3 skills/ci-hygiene/scripts/ci-hygiene.py <repo-path> --format json
 
 Exit code 0 means clean, 1 means findings, 2 means a usage error. The script is stdlib-only and does a heuristic line scan of workflow YAML, so it finds patterns rather than parsing YAML. Read a flagged line in context before acting on it.
 
+## Local CI
+
+The audit checks the workflow files. Local CI proves the work itself before it reaches GitHub, in two layers. Use both when the workflow must be proven locally, for example a new workflow or a repo with no Actions history at all.
+
+### The pre-push gate
+
+`scripts/ci-local-gate.py` runs the hygiene audit, then the repo's own checks, and fails the push when anything fails.
+
+```sh
+python3 skills/ci-hygiene/scripts/ci-local-gate.py <repo-path>
+python3 skills/ci-hygiene/scripts/ci-local-gate.py <repo-path> --skip-tests
+python3 skills/ci-hygiene/scripts/ci-local-gate.py --install-hook <repo-path>
+```
+
+- Checks come from `.ci-hygiene.json` when it exists (`{"checks": [{"name": "unit", "run": "pytest -q"}]}`), which replaces auto-detection. Without it the gate auto-detects pytest, `npm test` and `npm run lint`, `cargo test`, `go test ./...`, and `make test`, including nested `tests/` dirs such as `skills/<name>/tests/`.
+- A check whose tool is missing is skipped with a note, never silently passed.
+- `--install-hook` writes the gate as the repo's pre-push hook. It refuses to overwrite an existing hook unless `--force` is given. Prefer pre-push over pre-commit: the gate runs tests, and tests belong on push, not on every commit.
+- Exit code 0 means everything that ran passed, 1 means a finding or a failed check, 2 means a usage error.
+
+### Running workflows locally with act
+
+`scripts/ci-local-act.py` runs the repo's actual `.github/workflows/*.yml` on the machine through [nektos/act](https://github.com/nektos/act). It needs act and Docker.
+
+```sh
+python3 skills/ci-hygiene/scripts/ci-local-act.py <repo-path>
+python3 skills/ci-hygiene/scripts/ci-local-act.py <repo-path> --job test
+python3 skills/ci-hygiene/scripts/ci-local-act.py <repo-path> --list
+python3 skills/ci-hygiene/scripts/ci-local-act.py <repo-path> -- --container-architecture linux/amd64
+```
+
+- When act or Docker is missing, the script prints install guidance and exits 2 instead of failing obscurely. On macOS: `brew install act` plus Docker Desktop.
+- Exit code is act's exit code. A repo with no `.github/workflows` exits 0 with a note.
+- act proves the workflow file runs. It does not prove the GitHub-hosted environment matches the local one, so a green local run is not a promise the remote run is green. Push still goes through real CI.
+
 ## Report the result
 
 - Group findings by file and check. One line per finding: file, line, check, what is wrong, the fix.
@@ -69,5 +103,5 @@ Exit code 0 means clean, 1 means findings, 2 means a usage error. The script is 
 ## Alternatives for better results
 
 - Pair this with the CI failure digest skill when a watcher reports failures: hygiene finds the structural cause, the digest names the incident.
-- Run the checker in CI on itself. A workflow that audits workflows is the cheapest way to keep the three rules true.
-- When a repo has no CI at all, say so in one line and stop. There is nothing to audit, and adding CI is a separate proposal, not a hygiene fix.
+- Run the checker in CI on itself. A workflow that audits workflows is the cheapest way to keep the three rules true. This repo does that: `.github/workflows/ci.yml` runs the skill's own tests, and the pre-push gate runs the audit plus the tests before every push.
+- When a repo has no CI at all, say so in one line and stop. There is nothing to audit, and adding CI is a separate proposal, not a hygiene fix. Local CI is the exception: the gate and act still prove the work locally even when no remote CI exists.
