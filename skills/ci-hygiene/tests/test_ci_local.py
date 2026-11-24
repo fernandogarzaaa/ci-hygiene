@@ -271,3 +271,38 @@ def test_detect_checks_skips_venv(tmp_path):
     venv_tests.mkdir(parents=True)
     (venv_tests / "test_x.py").write_text("def test_x():\n    assert True\n")
     assert mod.detect_checks(str(tmp_path)) == []
+
+
+def test_detect_checks_malformed_package_json(tmp_path):
+    mod = _load(GATE, "ci_local_gate")
+    (tmp_path / "package.json").write_text("{not json")
+    names = [n for n, _ in mod.detect_checks(str(tmp_path))]
+    assert names == []
+
+
+def test_detect_checks_unreadable_makefile(tmp_path, monkeypatch):
+    mod = _load(GATE, "ci_local_gate")
+    (tmp_path / "Makefile").write_text("test:\n\tpytest -q\n")
+    real_read = Path.read_text
+
+    def raising(self, *args, **kwargs):
+        if self.name == "Makefile":
+            raise OSError("unreadable")
+        return real_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", raising)
+    names = [n for n, _ in mod.detect_checks(str(tmp_path))]
+    assert "make test" not in names
+
+
+def test_detect_checks_pytest_marker(tmp_path):
+    mod = _load(GATE, "ci_local_gate")
+    (tmp_path / "pyproject.toml").write_text("[tool.pytest.ini_options]\n")
+    names = [n for n, _ in mod.detect_checks(str(tmp_path))]
+    assert names == ["pytest"]
+
+
+def test_check_prereqs_returns_false_when_act_missing(monkeypatch):
+    mod = _load(ACT, "ci_local_act")
+    monkeypatch.setattr(mod.shutil, "which", lambda _: None)
+    assert mod.check_prereqs() is False
